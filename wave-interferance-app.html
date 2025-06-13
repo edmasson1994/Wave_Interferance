@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Double Slit Interference</title>
+  <style>
+    body {
+      background-color: #f0f0f0;
+      font-family: sans-serif;
+    }
+    .simulation-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 20px;
+    }
+    canvas {
+      border: 1px solid black;
+      display: block;
+    }
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      text-align: center;
+      font-family: sans-serif;
+      padding: 6px;
+      border: 1px solid #ccc;
+      background-color: #fff;
+      border-radius: 6px;
+      flex-wrap: wrap;
+      font-size: 12px;
+    }
+    .slit-controls, .global-controls {
+        border: 1px solid #ddd;
+        padding: 4px 8px 8px 8px;
+        border-radius: 4px;
+        margin-top: 6px;
+    }
+    .slit-controls h4, .global-controls h4 {
+        margin: 2px 0 4px 0;
+        text-align: center;
+        color: #333;
+        font-size: 13px;
+    }
+    label {
+      display: block;
+      margin: 6px 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <div class="slit-controls">
+      <h4>Slit 1</h4>
+      <label>
+        Wavelength (nm):
+        <input type="range" id="wavelength1" min="380" max="750" step="1" value="500" />
+        <span id="wavelength1Value">500</span>
+      </label>
+      <label>
+        Amplitude (%):
+        <input type="range" id="amplitude1" min="0" max="100" step="1" value="100" />
+        <span id="amplitude1Value">100</span>
+      </label>
+      <label>
+        Phase (deg):
+        <input type="range" id="phase1" min="0" max="360" step="1" value="0" />
+        <span id="phase1Value">0</span>
+      </label>
+    </div>
+    <div class="slit-controls" id="slit2Controls">
+      <h4>Slit 2</h4>
+      <label>
+        Wavelength (nm):
+        <input type="range" id="wavelength2" min="380" max="750" step="1" value="650" />
+        <span id="wavelength2Value">650</span>
+      </label>
+       <label>
+        Amplitude (%):
+        <input type="range" id="amplitude2" min="0" max="100" step="1" value="100" />
+        <span id="amplitude2Value">100</span>
+      </label>
+      <label>
+        Phase (deg):
+        <input type="range" id="phase2" min="0" max="360" step="1" value="0" />
+        <span id="phase2Value">0</span>
+      </label>
+    </div>
+    <div class="global-controls">
+      <h4>Global Settings</h4>
+      <label>
+        Number of Slits:
+        <input type="range" id="numSlits" min="1" max="10" step="1" value="2" />
+        <span id="numSlitsValue">2</span>
+      </label>
+      <label>
+        Slit Distance:
+        <input type="range" id="slitDist" min="10" max="500" step="1" value="100" />
+        <span id="slitDistValue">100</span>
+      </label>
+      <label>
+        Slit Width:
+        <input type="range" id="slitWidth" min="1" max="50" step="1" value="10" />
+        <span id="slitWidthValue">10</span>
+      </label>
+      <label>
+        Animation Speed:
+        <input type="range" id="speed" min="0" max="0.2" step="0.005" value="0.02" />
+        <span id="speedValue">0.02</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="simulation-container">
+    <canvas id="waveCanvas" width="800" height="450"></canvas>
+    <canvas id="intensityCanvas" width="800" height="80"></canvas>
+    <canvas id="avgIntensityCanvas" width="800" height="20"></canvas>
+  </div>
+
+  <script>
+    const waveCanvas = document.getElementById('waveCanvas');
+    const waveCtx = waveCanvas.getContext('2d');
+    const intensityCanvas = document.getElementById('intensityCanvas');
+    const intensityCtx = intensityCanvas.getContext('2d');
+    const avgIntensityCanvas = document.getElementById('avgIntensityCanvas');
+    const avgIntensityCtx = avgIntensityCanvas.getContext('2d');
+
+    const offscreenCanvas = document.createElement('canvas');
+    const offscreenCtx = offscreenCanvas.getContext('2d');
+    waveCtx.imageSmoothingEnabled = true;
+
+    const wavelength1Slider = document.getElementById('wavelength1');
+    const wavelength2Slider = document.getElementById('wavelength2');
+    const amplitude1Slider = document.getElementById('amplitude1');
+    const amplitude2Slider = document.getElementById('amplitude2');
+    const phase1Slider = document.getElementById('phase1');
+    const phase2Slider = document.getElementById('phase2');
+    const numSlitsSlider = document.getElementById('numSlits');
+    const distSlider = document.getElementById('slitDist');
+    const slitWidthSlider = document.getElementById('slitWidth');
+    const speedSlider = document.getElementById('speed');
+
+    const wavelength1Value = document.getElementById('wavelength1Value');
+    const wavelength2Value = document.getElementById('wavelength2Value');
+    const amplitude1Value = document.getElementById('amplitude1Value');
+    const amplitude2Value = document.getElementById('amplitude2Value');
+    const phase1Value = document.getElementById('phase1Value');
+    const phase2Value = document.getElementById('phase2Value');
+    const numSlitsValue = document.getElementById('numSlitsValue');
+    const slitDistValue = document.getElementById('slitDistValue');
+    const slitWidthValue = document.getElementById('slitWidthValue');
+    const speedValue = document.getElementById('speedValue');
+
+    const width = waveCanvas.width;
+    const height = waveCanvas.height;
+    let t = 0;
+    let lastTime = 0;
+    const waveSpeed = 300;
+    const gammaVis = 0.6; // <1 brightens mid-tones for better visual contrast
+
+    // Wavelength to RGB conversion
+    function wavelengthToRgb(wavelength) {
+        let r, g, b;
+        if (wavelength >= 380 && wavelength <= 440) {
+            r = -(wavelength - 440) / (440 - 380);
+            g = 0.0;
+            b = 1.0;
+        } else if (wavelength >= 440 && wavelength <= 490) {
+            r = 0.0;
+            g = (wavelength - 440) / (490 - 440);
+            b = 1.0;
+        } else if (wavelength >= 490 && wavelength <= 510) {
+            r = 0.0;
+            g = 1.0;
+            b = -(wavelength - 510) / (510 - 490);
+        } else if (wavelength >= 510 && wavelength <= 580) {
+            r = (wavelength - 510) / (580 - 510);
+            g = 1.0;
+            b = 0.0;
+        } else if (wavelength >= 580 && wavelength <= 645) {
+            r = 1.0;
+            g = -(wavelength - 645) / (645 - 580);
+            b = 0.0;
+        } else if (wavelength >= 645 && wavelength <= 780) {
+            r = 1.0;
+            g = 0.0;
+            b = 0.0;
+        } else {
+            r = 0.0; g = 0.0; b = 0.0;
+        }
+
+        // Intensity correction
+        let factor;
+        if (wavelength >= 380 && wavelength <= 420) {
+            factor = 0.3 + 0.7 * (wavelength - 380) / (420 - 380);
+        } else if (wavelength >= 420 && wavelength <= 701) {
+            factor = 1.0;
+        } else if (wavelength >= 701 && wavelength <= 780) {
+            factor = 0.3 + 0.7 * (780 - wavelength) / (780 - 701);
+        } else {
+            factor = 0.0;
+        }
+
+        return [
+            Math.pow(r * factor, gammaVis) * 255,
+            Math.pow(g * factor, gammaVis) * 255,
+            Math.pow(b * factor, gammaVis) * 255
+        ];
+    }
+
+    function updateWavelength1() { wavelength1Value.textContent = wavelength1Slider.value; }
+    function updateWavelength2() { wavelength2Value.textContent = wavelength2Slider.value; }
+    function updateAmplitude1() { amplitude1Value.textContent = amplitude1Slider.value; }
+    function updateAmplitude2() { amplitude2Value.textContent = amplitude2Slider.value; }
+    function updatePhase1() { phase1Value.textContent = phase1Slider.value; }
+    function updatePhase2() { phase2Value.textContent = phase2Slider.value; }
+    function updateNumSlits() {
+        numSlitsValue.textContent = numSlitsSlider.value;
+        const numSlits = parseInt(numSlitsSlider.value, 10);
+
+        // Slit 2 controls
+        const slit2Controls = document.getElementById('slit2Controls');
+        const isTwoSlits = numSlits === 2;
+        slit2Controls.style.opacity = isTwoSlits ? '1' : '0.5';
+        const slit2Inputs = slit2Controls.getElementsByTagName('input');
+        for (let input of slit2Inputs) {
+            input.disabled = !isTwoSlits;
+        }
+
+        // Slit width controls
+        const isGrating = numSlits >= 3;
+        slitWidthSlider.disabled = isGrating;
+        slitWidthSlider.parentElement.style.opacity = isGrating ? '0.5' : '1';
+        if (isGrating) {
+            slitWidthSlider.value = slitWidthSlider.min;
+            updateSlitWidth();
+        }
+    }
+    function updateSlitDist() { slitDistValue.textContent = distSlider.value; }
+    function updateSlitWidth() { slitWidthValue.textContent = slitWidthSlider.value; }
+    function updateSpeed() { speedValue.textContent = speedSlider.value; }
+
+    wavelength1Slider.addEventListener('input', updateWavelength1);
+    wavelength2Slider.addEventListener('input', updateWavelength2);
+    amplitude1Slider.addEventListener('input', updateAmplitude1);
+    amplitude2Slider.addEventListener('input', updateAmplitude2);
+    phase1Slider.addEventListener('input', updatePhase1);
+    phase2Slider.addEventListener('input', updatePhase2);
+    numSlitsSlider.addEventListener('input', updateNumSlits);
+    distSlider.addEventListener('input', updateSlitDist);
+    slitWidthSlider.addEventListener('input', updateSlitWidth);
+    speedSlider.addEventListener('input', updateSpeed);
+
+    function sinc(x) {
+      if (x === 0) return 1;
+      return Math.sin(x) / x;
+    }
+
+    function draw(currentTime) {
+      if (!lastTime) {
+          lastTime = currentTime;
+      }
+      const dt = (currentTime - lastTime) / 1000; // time in seconds
+      lastTime = currentTime;
+
+      const wavelength1 = parseFloat(wavelength1Slider.value);
+      const wavelength2 = parseFloat(wavelength2Slider.value);
+      const amplitude1 = parseFloat(amplitude1Slider.value) / 100.0;
+      const amplitude2 = parseFloat(amplitude2Slider.value) / 100.0;
+      const phase1 = parseFloat(phase1Slider.value) * Math.PI / 180; // degrees to radians
+      const phase2 = parseFloat(phase2Slider.value) * Math.PI / 180; // degrees to radians
+      const numSlits = parseInt(numSlitsSlider.value, 10);
+      const slitDist = parseFloat(distSlider.value);
+      const slitWidth = parseFloat(slitWidthSlider.value);
+      const speed = parseFloat(speedSlider.value);
+      const useDiffraction = numSlits < 3;
+      const resolutionFactor = 2; // Fixed resolution for consistent performance
+      
+      const freq1 = waveSpeed / wavelength1;
+      const k1 = 2 * Math.PI / (wavelength1 / 10); // Scale wavelength for visualization
+      const color1 = wavelengthToRgb(wavelength1);
+      
+      const freq2 = waveSpeed / wavelength2;
+      const k2 = 2 * Math.PI / (wavelength2 / 10); // Scale wavelength for visualization
+      const color2 = wavelengthToRgb(wavelength2);
+
+      const imageWidth = width / resolutionFactor;
+      const imageHeight = height / resolutionFactor;
+      const image = waveCtx.createImageData(imageWidth, imageHeight);
+      const data = image.data;
+
+      const ySource = height / 12; // Further reduced plane wave area
+      const barrierThickness = 4;
+      const xCenter = width / 2;
+      
+      const totalGratingWidth = (numSlits - 1) * slitDist;
+      const firstSlitX = xCenter - totalGratingWidth / 2;
+      const slitPositions = [];
+      for (let i = 0; i < numSlits; i++) {
+        slitPositions.push(firstSlitX + i * slitDist);
+      }
+
+      for (let py = 0; py < imageHeight; py++) {
+        for (let px = 0; px < imageWidth; px++) {
+          const x = px * resolutionFactor;
+          const y = py * resolutionFactor;
+          const index = (py * imageWidth + px) * 4;
+
+          // Draw barrier
+          if (y > ySource - barrierThickness / 2 && y < ySource + barrierThickness / 2) {
+            let isAtAnySlit = false;
+            let slitIndex = -1;
+            for (let i = 0; i < slitPositions.length; i++) {
+                const slitX = slitPositions[i];
+                if (x > slitX - slitWidth / 2 && x < slitX + slitWidth / 2) {
+                    isAtAnySlit = true;
+                    slitIndex = i;
+                    break;
+                }
+            }
+            if (!isAtAnySlit) {
+              data[index] = 0; data[index + 1] = 0; data[index + 2] = 0; data[index + 3] = 255;
+              continue;
+            } else {
+               // Render slit opening as part of the incoming plane wave
+              const useSlit2 = (numSlits === 2 && slitIndex === 1);
+              const wl = useSlit2 ? wavelength2 : wavelength1;
+              const amp = useSlit2 ? amplitude2 : amplitude1;
+              const phase = useSlit2 ? phase2 : phase1;
+              const k = useSlit2 ? k2 : k1;
+              const color = useSlit2 ? color2 : color1;
+              const freq = waveSpeed / wl;
+
+              let wave = amp * Math.sin(k * (y - ySource) - 2 * Math.PI * freq * t + phase);
+              let intensity = (wave * wave) / 4.0;
+              let scale = Math.pow(intensity, gammaVis);
+              data[index] = color[0] * scale;
+              data[index + 1] = color[1] * scale;
+              data[index + 2] = color[2] * scale;
+              data[index + 3] = 255;
+              continue;
+            }
+          }
+
+          let r_field = 0, g_field = 0, b_field = 0;
+
+          if (y > ySource) { // Interference pattern after slits
+            for (let i = 0; i < numSlits; i++) {
+                const useSlit2 = (numSlits === 2 && i === 1);
+                const wl = useSlit2 ? wavelength2 : wavelength1;
+                const amp = useSlit2 ? amplitude2 : amplitude1;
+                const phase = useSlit2 ? phase2 : phase1;
+                const k = useSlit2 ? k2 : k1;
+                const color = useSlit2 ? color2 : color1;
+                
+                const xSlit = slitPositions[i];
+                let dx = x - xSlit;
+                let dy = y - ySource;
+                let r_center = Math.sqrt(dx * dx + dy * dy);
+                
+                let diff_amp = 1.0;
+                let r = r_center;
+
+                if (useDiffraction) {
+                    let sin_theta = r_center > 0 ? dx / r_center : 0;
+                    let beta = k * slitWidth * sin_theta;
+
+                    // Blend based on actual distance from the slit, not vertical drop.
+                    const blend = Math.min(1, r_center / slitWidth); // 0 at slit, ->1 after one slit-width of travel
+                    const effective_beta = beta * blend;
+                    diff_amp = sinc(effective_beta / 2);
+
+                    const x_closest = Math.max(xSlit - slitWidth / 2, Math.min(x, xSlit + slitWidth / 2));
+                    r = Math.sqrt((x - x_closest) * (x - x_closest) + dy * dy);
+                }
+                
+                let wave = amp * diff_amp * Math.sin(k * r - 2 * Math.PI * (waveSpeed / wl) * t + phase);
+                
+                r_field += (color[0] / 255.0) * wave;
+                g_field += (color[1] / 255.0) * wave;
+                b_field += (color[2] / 255.0) * wave;
+            }
+            
+            // Intensity is the square of the field amplitude
+            const r_intensity = r_field * r_field;
+            const g_intensity = g_field * g_field;
+            const b_intensity = b_field * b_field;
+
+            // Normalize and set pixel data. Max intensity for a component is ~(numSlits)^2.
+            const norm = (numSlits === 1) ? 4.0 : numSlits * numSlits;
+            r = Math.pow(Math.min(r_intensity / norm, 1), gammaVis) * 255;
+            g = Math.pow(Math.min(g_intensity / norm, 1), gammaVis) * 255;
+            b = Math.pow(Math.min(b_intensity / norm, 1), gammaVis) * 255;
+
+          } else { // Plane wave before barrier
+            const isTwoSlits = numSlits === 2;
+            const top_norm = 4.0;
+            const wallThickness = isTwoSlits ? 4 : 0; // No central divider unless N=2
+            if (x > width / 2 - wallThickness / 2 && x < width / 2 + wallThickness / 2) {
+              r = 0; g = 0; b = 0;
+            } else if (!isTwoSlits || x < width / 2) {
+              // Wave 1 (Left or full width)
+              let wave = amplitude1 * Math.sin(k1 * (y - ySource) - 2 * Math.PI * freq1 * t + phase1);
+              let intensity = (wave * wave) / top_norm;
+              let scale = Math.pow(intensity, gammaVis);
+              r = color1[0] * scale;
+              g = color1[1] * scale;
+              b = color1[2] * scale;
+            } else { // Wave 2 (Right, only for N=2)
+              let wave = amplitude2 * Math.sin(k2 * (y - ySource) - 2 * Math.PI * freq2 * t + phase2);
+              let intensity = (wave * wave) / top_norm;
+              let scale = Math.pow(intensity, gammaVis);
+              r = color2[0] * scale;
+              g = color2[1] * scale;
+              b = color2[2] * scale;
+            }
+          }
+          
+          data[index] = r;
+          data[index + 1] = g;
+          data[index + 2] = b;
+          data[index + 3] = 255;
+        }
+      }
+      
+      waveCtx.clearRect(0, 0, width, height);
+      offscreenCanvas.width = imageWidth;
+      offscreenCanvas.height = imageHeight;
+      offscreenCtx.putImageData(image, 0, 0);
+      waveCtx.drawImage(offscreenCanvas, 0, 0, width, height);
+
+      // Draw intensity graph at the bottom
+      intensityCtx.clearRect(0, 0, intensityCanvas.width, intensityCanvas.height);
+      intensityCtx.fillStyle = '#1a1a1a';
+      intensityCtx.fillRect(0, 0, intensityCanvas.width, intensityCanvas.height);
+      
+      const screenY = height - 1; // Position the screen at the bottom of the wave canvas
+
+      for (let x = 0; x < width; x++) {
+          let r_field = 0, g_field = 0, b_field = 0;
+
+          for (let i = 0; i < numSlits; i++) {
+            const useSlit2 = (numSlits === 2 && i === 1);
+            const wl = useSlit2 ? wavelength2 : wavelength1;
+            const amp = useSlit2 ? amplitude2 : amplitude1;
+            const phase = useSlit2 ? phase2 : phase1;
+            const k = useSlit2 ? k2 : k1;
+            
+            const xSlit = slitPositions[i];
+            let dx = x - xSlit;
+            let dy = screenY - ySource;
+            let r_center = Math.sqrt(dx * dx + dy * dy);
+
+            let diff_amp = 1.0;
+            let r = r_center;
+
+            if (useDiffraction) {
+                let sin_theta = r_center > 0 ? dx / r_center : 0;
+                let beta = k * slitWidth * sin_theta;
+
+                // Blend based on actual distance from the slit, not vertical drop.
+                const blend = Math.min(1, r_center / slitWidth); // 0 at slit, ->1 after one slit-width of travel
+                const effective_beta = beta * blend;
+                diff_amp = sinc(effective_beta / 2);
+
+                const x_closest = Math.max(xSlit - slitWidth / 2, Math.min(x, xSlit + slitWidth / 2));
+                r = Math.sqrt((x - x_closest) * (x - x_closest) + dy * dy);
+            }
+
+            const wave = amp * diff_amp * Math.sin(k * r - 2 * Math.PI * (waveSpeed / wl) * t + phase);
+            
+            // Get color from the main closure
+            const color = useSlit2 ? color2 : color1;
+            r_field += (color[0] / 255.0) * wave;
+            g_field += (color[1] / 255.0) * wave;
+            b_field += (color[2] / 255.0) * wave;
+          }
+          
+          const r_intensity = r_field * r_field;
+          const g_intensity = g_field * g_field;
+          const b_intensity = b_field * b_field;
+
+          // Map individual channels to display colour (gamma corrected)
+          const normChan = (numSlits === 1) ? 4.0 : numSlits * numSlits;
+          const r = Math.pow(Math.min(r_intensity / normChan, 1), gammaVis) * 255;
+          const g = Math.pow(Math.min(g_intensity / normChan, 1), gammaVis) * 255;
+          const b = Math.pow(Math.min(b_intensity / normChan, 1), gammaVis) * 255;
+
+          // Height of bar is based on total intensity so that a single-colour peak fills graph
+          const total_intensity = r_intensity + g_intensity + b_intensity;
+          const total_norm = (numSlits === 1) ? 4.0 : numSlits * numSlits; // Max of one fully constructive component
+          const y = intensityCanvas.height - Math.min(total_intensity / total_norm, 1) * intensityCanvas.height;
+
+          intensityCtx.strokeStyle = `rgb(${r},${g},${b})`;
+          intensityCtx.beginPath();
+          intensityCtx.moveTo(x, intensityCanvas.height);
+          intensityCtx.lineTo(x, y);
+          intensityCtx.stroke();
+      }
+
+      // Draw static average intensity graph
+      avgIntensityCtx.fillStyle = '#1a1a1a';
+      avgIntensityCtx.fillRect(0, 0, avgIntensityCanvas.width, avgIntensityCanvas.height);
+      const coherent = (numSlits !== 2) || (wavelength1 === wavelength2);
+
+      for (let x = 0; x < width; x++) {
+        let r_avg_intensity = 0;
+        let g_avg_intensity = 0;
+        let b_avg_intensity = 0;
+
+        const slitProps = [];
+
+        for (let i = 0; i < numSlits; i++) {
+            const useSlit2 = (numSlits === 2 && i === 1);
+            const wl = useSlit2 ? wavelength2 : wavelength1;
+            const amp = useSlit2 ? amplitude2 : amplitude1;
+            const phase = useSlit2 ? phase2 : phase1;
+            const k = useSlit2 ? k2 : k1;
+            const color = useSlit2 ? color2 : color1;
+
+            const xSlit = slitPositions[i];
+            let dx = x - xSlit;
+            let dy = screenY - ySource;
+            let r_center = Math.sqrt(dx * dx + dy * dy);
+            
+            let diff_amp = 1.0;
+            let r = r_center;
+            
+            if (useDiffraction) {
+                let sin_theta = r_center > 0 ? dx / r_center : 0;
+                let beta = k * slitWidth * sin_theta;
+
+                // Blend based on actual distance from the slit, not vertical drop.
+                const blend = Math.min(1, r_center / slitWidth); // 0 at slit, ->1 after one slit-width of travel
+                const effective_beta = beta * blend;
+                diff_amp = sinc(effective_beta / 2);
+
+                const x_closest = Math.max(xSlit - slitWidth / 2, Math.min(x, xSlit + slitWidth / 2));
+                r = Math.sqrt((x - x_closest) * (x - x_closest) + dy * dy);
+            }
+
+            const Ar = (color[0] / 255.0) * amp * diff_amp;
+            const Ag = (color[1] / 255.0) * amp * diff_amp;
+            const Ab = (color[2] / 255.0) * amp * diff_amp;
+            
+            const current_phase = k * r + phase;
+            slitProps.push({ Ar, Ag, Ab, phase: current_phase });
+        }
+
+        // Add the incoherent sum of squares term (I = sum(Ai^2 / 2))
+        for (let i = 0; i < numSlits; i++) {
+            r_avg_intensity += (slitProps[i].Ar * slitProps[i].Ar) / 2.0;
+            g_avg_intensity += (slitProps[i].Ag * slitProps[i].Ag) / 2.0;
+            b_avg_intensity += (slitProps[i].Ab * slitProps[i].Ab) / 2.0;
+        }
+
+        if (coherent) {
+          // Add the coherent interference terms (I = sum_i!=j(Ai*Aj*cos(d_phase)))
+          for (let i = 0; i < numSlits; i++) {
+            for (let j = i + 1; j < numSlits; j++) {
+                const phase_diff = slitProps[i].phase - slitProps[j].phase;
+                const cos_phase_diff = Math.cos(phase_diff);
+                r_avg_intensity += slitProps[i].Ar * slitProps[j].Ar * cos_phase_diff;
+                g_avg_intensity += slitProps[i].Ag * slitProps[j].Ag * cos_phase_diff;
+                b_avg_intensity += slitProps[i].Ab * slitProps[j].Ab * cos_phase_diff;
+            }
+          }
+        }
+        
+        const norm = numSlits === 1 ? 2.0 : (numSlits * numSlits) / 2.0; // Max avg intensity for one channel
+        const r_final = Math.pow(Math.min(r_avg_intensity / norm, 1), gammaVis) * 255;
+        const g_final = Math.pow(Math.min(g_avg_intensity / norm, 1), gammaVis) * 255;
+        const b_final = Math.pow(Math.min(b_avg_intensity / norm, 1), gammaVis) * 255;
+
+        avgIntensityCtx.fillStyle = `rgb(${r_final},${g_final},${b_final})`;
+        avgIntensityCtx.fillRect(x, 0, 1, avgIntensityCanvas.height);
+      }
+
+      t += 30 * speed * dt;
+      requestAnimationFrame(draw);
+    }
+
+    updateWavelength1();
+    updateWavelength2();
+    updateAmplitude1();
+    updateAmplitude2();
+    updatePhase1();
+    updatePhase2();
+    updateNumSlits();
+    updateSlitDist();
+    updateSlitWidth();
+    updateSpeed();
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
