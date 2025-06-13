@@ -98,14 +98,14 @@
         <span id="numSlitsValue">2</span>
       </label>
       <label>
-        Slit Distance:
-        <input type="range" id="slitDist" min="10" max="500" step="1" value="100" />
-        <span id="slitDistValue">100</span>
+        Slit Distance (µm):
+        <input type="range" id="slitDist" min="0.5" max="5" step="0.1" value="2" />
+        <span id="slitDistValue">2</span>
       </label>
       <label>
-        Slit Width:
-        <input type="range" id="slitWidth" min="1" max="50" step="1" value="10" />
-        <span id="slitWidthValue">10</span>
+        Slit Width (µm):
+        <input type="range" id="slitWidth" min="0.5" max="5" step="0.1" value="1" />
+        <span id="slitWidthValue">1</span>
       </label>
       <label>
         Animation Speed:
@@ -230,18 +230,21 @@
         for (let input of slit2Inputs) {
             input.disabled = !isTwoSlits;
         }
-
-        // Slit width controls
-        const isGrating = numSlits >= 3;
-        slitWidthSlider.disabled = isGrating;
-        slitWidthSlider.parentElement.style.opacity = isGrating ? '0.5' : '1';
-        if (isGrating) {
-            slitWidthSlider.value = slitWidthSlider.min;
-            updateSlitWidth();
-        }
     }
-    function updateSlitDist() { slitDistValue.textContent = distSlider.value; }
-    function updateSlitWidth() { slitWidthValue.textContent = slitWidthSlider.value; }
+    function updateSlitInputs() {
+        const widthValue = parseFloat(slitWidthSlider.value);
+        let distValue = parseFloat(distSlider.value);
+
+        // Enforce constraint: distance must be >= width
+        distSlider.min = widthValue;
+        if (distValue < widthValue) {
+            distValue = widthValue;
+            distSlider.value = distValue;
+        }
+
+        slitDistValue.textContent = parseFloat(distSlider.value).toFixed(1) + " µm";
+        slitWidthValue.textContent = parseFloat(slitWidthSlider.value).toFixed(1) + " µm";
+    }
     function updateSpeed() { speedValue.textContent = speedSlider.value; }
 
     wavelength1Slider.addEventListener('input', updateWavelength1);
@@ -251,8 +254,8 @@
     phase1Slider.addEventListener('input', updatePhase1);
     phase2Slider.addEventListener('input', updatePhase2);
     numSlitsSlider.addEventListener('input', updateNumSlits);
-    distSlider.addEventListener('input', updateSlitDist);
-    slitWidthSlider.addEventListener('input', updateSlitWidth);
+    distSlider.addEventListener('input', updateSlitInputs);
+    slitWidthSlider.addEventListener('input', updateSlitInputs);
     speedSlider.addEventListener('input', updateSpeed);
 
     function sinc(x) {
@@ -274,11 +277,18 @@
       const phase1 = parseFloat(phase1Slider.value) * Math.PI / 180; // degrees to radians
       const phase2 = parseFloat(phase2Slider.value) * Math.PI / 180; // degrees to radians
       const numSlits = parseInt(numSlitsSlider.value, 10);
-      const slitDist = parseFloat(distSlider.value);
-      const slitWidth = parseFloat(slitWidthSlider.value);
       const speed = parseFloat(speedSlider.value);
-      const useDiffraction = numSlits < 3;
+      
+      // Convert real units (µm) to visualization units (pixels)
+      // The visualization scale is 1px = 10nm, established by the wavelength scaling.
+      // 1µm = 1000nm, so 1µm = 100px.
+      const um_to_px = 100;
+      const slitDist = parseFloat(distSlider.value) * um_to_px;
+      const slitWidth = parseFloat(slitWidthSlider.value) * um_to_px;
+      
+      const useDiffraction = true;
       const resolutionFactor = 2; // Fixed resolution for consistent performance
+      const visualSlitWidth = 2; // Visually represent slits as small point-like sources
       
       const freq1 = waveSpeed / wavelength1;
       const k1 = 2 * Math.PI / (wavelength1 / 10); // Scale wavelength for visualization
@@ -316,7 +326,7 @@
             let slitIndex = -1;
             for (let i = 0; i < slitPositions.length; i++) {
                 const slitX = slitPositions[i];
-                if (x > slitX - slitWidth / 2 && x < slitX + slitWidth / 2) {
+                if (x > slitX - visualSlitWidth / 2 && x < slitX + visualSlitWidth / 2) {
                     isAtAnySlit = true;
                     slitIndex = i;
                     break;
@@ -368,14 +378,7 @@
                 if (useDiffraction) {
                     let sin_theta = r_center > 0 ? dx / r_center : 0;
                     let beta = k * slitWidth * sin_theta;
-
-                    // Blend based on actual distance from the slit, not vertical drop.
-                    const blend = Math.min(1, r_center / slitWidth); // 0 at slit, ->1 after one slit-width of travel
-                    const effective_beta = beta * blend;
-                    diff_amp = sinc(effective_beta / 2);
-
-                    const x_closest = Math.max(xSlit - slitWidth / 2, Math.min(x, xSlit + slitWidth / 2));
-                    r = Math.sqrt((x - x_closest) * (x - x_closest) + dy * dy);
+                    diff_amp = sinc(beta / 2);
                 }
                 
                 let wave = amp * diff_amp * Math.sin(k * r - 2 * Math.PI * (waveSpeed / wl) * t + phase);
@@ -461,14 +464,7 @@
             if (useDiffraction) {
                 let sin_theta = r_center > 0 ? dx / r_center : 0;
                 let beta = k * slitWidth * sin_theta;
-
-                // Blend based on actual distance from the slit, not vertical drop.
-                const blend = Math.min(1, r_center / slitWidth); // 0 at slit, ->1 after one slit-width of travel
-                const effective_beta = beta * blend;
-                diff_amp = sinc(effective_beta / 2);
-
-                const x_closest = Math.max(xSlit - slitWidth / 2, Math.min(x, xSlit + slitWidth / 2));
-                r = Math.sqrt((x - x_closest) * (x - x_closest) + dy * dy);
+                diff_amp = sinc(beta / 2);
             }
 
             const wave = amp * diff_amp * Math.sin(k * r - 2 * Math.PI * (waveSpeed / wl) * t + phase);
@@ -533,14 +529,7 @@
             if (useDiffraction) {
                 let sin_theta = r_center > 0 ? dx / r_center : 0;
                 let beta = k * slitWidth * sin_theta;
-
-                // Blend based on actual distance from the slit, not vertical drop.
-                const blend = Math.min(1, r_center / slitWidth); // 0 at slit, ->1 after one slit-width of travel
-                const effective_beta = beta * blend;
-                diff_amp = sinc(effective_beta / 2);
-
-                const x_closest = Math.max(xSlit - slitWidth / 2, Math.min(x, xSlit + slitWidth / 2));
-                r = Math.sqrt((x - x_closest) * (x - x_closest) + dy * dy);
+                diff_amp = sinc(beta / 2);
             }
 
             const Ar = (color[0] / 255.0) * amp * diff_amp;
@@ -591,8 +580,7 @@
     updatePhase1();
     updatePhase2();
     updateNumSlits();
-    updateSlitDist();
-    updateSlitWidth();
+    updateSlitInputs();
     updateSpeed();
     requestAnimationFrame(draw);
   </script>
